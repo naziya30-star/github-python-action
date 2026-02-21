@@ -1,33 +1,58 @@
-name: Deploy and Run App
-  run: |
-    ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+name: Deploy Python App to EC2
 
-      set -e
-      echo "🚀 Connected to EC2"
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-      # Install dependencies
-      sudo apt update -y
-      sudo apt install -y python3 python3-pip git
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-      mkdir -p ~/python-app
-      cd ~/python-app
+    steps:
+      # Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # Clone or pull latest code
-      if [ ! -d ".git" ]; then
-        git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} .
-      else
-        git pull origin main
-      fi
+      # Setup SSH key
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      # Install Python dependencies
-      pip3 install -r requirements.txt
+      # Deploy application to EC2
+      - name: Deploy and Run App
+        run: |
+          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+            set -e
+            echo "🚀 Connected to EC2"
 
-      # Kill old app
-      pkill -f app.py || true
+            # Install required packages
+            sudo apt update -y
+            sudo apt install -y python3 python3-pip git
 
-      # Run app
-      nohup python3 app.py > app.log 2>&1 &
+            # Prepare app directory
+            mkdir -p ~/python-app
+            cd ~/python-app
 
-      echo "✅ App deployed successfully"
+            # Clone or pull latest code
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/${{ github.repository }} .
+            else
+              git pull origin main
+            fi
 
-    EOF
+            # Install Python dependencies
+            pip3 install -r requirements.txt
+
+            # Stop previous app if running
+            pkill -f app.py || true
+
+            # Run application in background
+            nohup python3 app.py > app.log 2>&1 &
+
+            echo "✅ App deployed successfully"
+          EOF
