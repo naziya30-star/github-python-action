@@ -1,62 +1,33 @@
-name: Deploy Python App to EC2
+- name: Deploy and Run App
+  run: |
+    ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
 
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+      set -e
+      echo "🚀 Connected to EC2"
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+      # Install dependencies
+      sudo apt update -y
+      sudo apt install -y python3 python3-pip git
 
-    steps:
-      # ✅ Checkout code
-      - name: Checkout code
-        uses: actions/checkout@v4
+      mkdir -p ~/python-app
+      cd ~/python-app
 
-      # ✅ Setup SSH key
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+      # Clone or pull latest code
+      if [ ! -d ".git" ]; then
+        git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} .
+      else
+        git pull origin main
+      fi
 
-      # ✅ Deploy to EC2
-      - name: Deploy and Run App
-        run: |
-          ssh ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+      # Install Python dependencies
+      pip3 install -r requirements.txt
 
-            # Stop on error
-            set -e
+      # Kill old app
+      pkill -f app.py || true
 
-            echo "🚀 Connected to EC2"
+      # Run app
+      nohup python3 app.py > app.log 2>&1 &
 
-            # Install dependencies
-            sudo apt update -y
-            sudo apt install -y python3 python3-pip git
+      echo "✅ App deployed successfully"
 
-            # Create app directory
-            mkdir -p ~/python-app
-            cd ~/python-app
-
-            # Pull latest code
-            if [ ! -d ".git" ]; then
-              git clone https://github.com/${{ github.repository }} .
-            else
-              git pull origin main
-            fi
-
-            # Install Python dependencies
-            pip3 install -r requirements.txt
-
-            # Kill old app if running
-            pkill -f app.py || true
-
-            # Run app in background
-            nohup python3 app.py > app.log 2>&1 &
-
-            echo "✅ App deployed successfully"
-
-          EOF
+    EOF
